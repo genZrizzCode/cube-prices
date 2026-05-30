@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Cube Price Compass compares speed cube prices across major stores like SpeedCubeShop, TheCubicle, ZiiCube, and Cubers Shop HK."
+    />
+    <title>Cube Price Compass</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="backdrop backdrop-a"></div>
+    <div class="backdrop backdrop-b"></div>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">CPC</span>
+          <div>
+            <p class="brand-kicker">Cube Price Compass</p>
+            <p class="brand-subtitle">Speed cube price comparison across the big stores</p>
+          </div>
+        </div>
+        <a class="ghost-link" href="#stores">Store map</a>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Live-ish price snapshots from official storefronts</p>
+          <h1>Find the best cube deal without hopping between ten tabs.</h1>
+          <p class="lede">
+            Compare exact product listings from major speedcubing shops, normalize currencies, and jump
+            straight to the cheapest option for the cube you actually want.
+          </p>
+
+          <div class="search-panel">
+            <label class="field">
+              <span>Search cubes or stores</span>
+              <input id="searchInput" type="search" placeholder="Try WeiLong, RS3 M V5, Warrior M..." />
+            </label>
+            <label class="field">
+              <span>Store filter</span>
+              <select id="vendorFilter"></select>
+            </label>
+          </div>
+
+          <div class="metrics" id="metrics"></div>
+        </div>
+
+        <aside class="hero-aside">
+          <div class="glass-card spotlight">
+            <p class="spotlight-label">Current lowest normalized price</p>
+            <div id="spotlightPrice" class="spotlight-price">Loading...</div>
+            <p id="spotlightMeta" class="spotlight-meta"></p>
+          </div>
+
+          <div class="glass-card rates">
+            <div class="rates-head">
+              <div>
+                <p class="spotlight-label">Currency normalization</p>
+                <h2>Adjust the exchange rates</h2>
+              </div>
+              <span class="tiny-pill">USD base</span>
+            </div>
+            <div class="rate-grid">
+              <label class="rate-field">
+                <span>HKD → USD</span>
+                <input id="rateHkd" type="number" min="0.05" step="0.001" value="0.128" />
+              </label>
+              <label class="rate-field">
+                <span>GBP → USD</span>
+                <input id="rateGbp" type="number" min="0.5" step="0.01" value="1.27" />
+              </label>
+            </div>
+            <p class="rate-note">
+              Prices are snapshots from public pages. Rates are editable so you can compare across currencies
+              the way you want.
+            </p>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Tracked listings</p>
+            <h2>Price board</h2>
+          </div>
+          <p class="section-note">
+            Each row compares one tracked cube listing across major retailers. The exact variant name is shown so
+            you can spot spec differences before you click through.
+          </p>
+        </div>
+        <div id="comparisonGrid" class="comparison-grid"></div>
+      </section>
+
+      <section class="section" id="stores">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Other major stores</p>
+            <h2>Store map</h2>
+          </div>
+          <p class="section-note">
+            These are the stores I’d keep on the radar for cubing purchases, including the ones you named and
+            a few of the big established shops.
+          </p>
+        </div>
+        <div id="storeGrid" class="store-grid"></div>
+      </section>
+
+      <footer class="footer">
+        <p>
+          Built for price comparison, not checkout automation. Always verify stock, shipping, and promotions on the
+          official product page before buying.
+        </p>
+      </footer>
+    </main>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
