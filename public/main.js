@@ -147,6 +147,7 @@ const dom = {
   sizeFilter: document.getElementById("sizeFilter"),
   shapeFilter: document.getElementById("shapeFilter"),
   categoryFilter: document.getElementById("categoryFilter"),
+  refreshButton: document.getElementById("refreshButton"),
   comparisonGrid: document.getElementById("comparisonGrid"),
   storeGrid: document.getElementById("storeGrid"),
   metrics: document.getElementById("metrics"),
@@ -270,6 +271,36 @@ function renderOptions(select, options, currentValue, fallbackLabel) {
   select.value = options.some((option) => option.value === previousValue) ? previousValue : "all";
 }
 
+function collectFilterValues(catalog) {
+  const products = (catalog.products || []).map((product) => normalizeProduct(product));
+  const filterData = catalog.filters || {};
+
+  const brands = new Map();
+  for (const brand of filterData.brands || []) {
+    if (brand?.value) brands.set(brand.value, brand.label || brand.value);
+  }
+  for (const product of products) {
+    if (product.brandKey) brands.set(product.brandKey, product.brandLabel || product.brandKey);
+  }
+
+  const sizes = new Set(filterData.sizes || []);
+  const shapes = new Set(filterData.shapes || []);
+  const categories = new Set(filterData.categories || []);
+
+  for (const product of products) {
+    if (product.size) sizes.add(product.size);
+    if (product.shape) shapes.add(product.shape);
+    if (product.category) categories.add(product.category);
+  }
+
+  return {
+    brands: [...brands.entries()].map(([value, label]) => ({ value, label })),
+    sizes: [...sizes].filter(Boolean),
+    shapes: [...shapes].filter(Boolean),
+    categories: [...categories].filter(Boolean),
+  };
+}
+
 function renderFilterOptions(catalog) {
   const stores = (catalog.stores || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   renderOptions(
@@ -279,20 +310,20 @@ function renderFilterOptions(catalog) {
     "All stores",
   );
 
-  const filterData = catalog.filters || {};
-  const brandOptions = (filterData.brands || [])
+  const filterData = collectFilterValues(catalog);
+  const brandOptions = filterData.brands
     .slice()
     .sort((a, b) => String(a.label).localeCompare(String(b.label)))
     .map((brand) => ({ value: brand.value, label: brand.label }));
-  const sizeOptions = (filterData.sizes || [])
+  const sizeOptions = filterData.sizes
     .slice()
     .sort()
     .map((size) => ({ value: size, label: size }));
-  const shapeOptions = (filterData.shapes || [])
+  const shapeOptions = filterData.shapes
     .slice()
     .sort()
     .map((shape) => ({ value: shape, label: shape }));
-  const categoryOptions = (filterData.categories || [])
+  const categoryOptions = filterData.categories
     .slice()
     .sort()
     .map((category) => ({ value: category, label: category }));
@@ -526,13 +557,13 @@ function renderCatalog(catalog) {
   renderComparison(filtered);
 }
 
-async function fetchCatalog() {
+async function fetchCatalog(forceRefresh = false) {
   state.loading = true;
   state.error = null;
   renderCatalog(state.catalog);
 
   try {
-    const response = await fetch(API_URL, {
+    const response = await fetch(`${API_URL}${forceRefresh ? "?refresh=1" : ""}`, {
       headers: { accept: "application/json" },
     });
     if (!response.ok) {
@@ -543,6 +574,10 @@ async function fetchCatalog() {
     state.error = error;
   } finally {
     state.loading = false;
+    if (dom.refreshButton) {
+      dom.refreshButton.disabled = false;
+      dom.refreshButton.textContent = "Refresh prices";
+    }
     renderCatalog(state.catalog);
     if (state.error) {
       dom.spotlightMeta.textContent =
@@ -578,6 +613,11 @@ function attachListeners() {
   });
   [dom.rateHkd, dom.rateGbp].forEach((element) => {
     element.addEventListener("input", () => renderCatalog(state.catalog));
+  });
+  dom.refreshButton.addEventListener("click", async () => {
+    dom.refreshButton.disabled = true;
+    dom.refreshButton.textContent = "Refreshing...";
+    await fetchCatalog(true);
   });
 }
 

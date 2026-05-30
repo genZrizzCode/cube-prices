@@ -269,6 +269,68 @@ function extractPrice(html) {
   return null;
 }
 
+function stripTags(value) {
+  return String(value || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractListingOffers(html, baseUrl, source) {
+  const offers = [];
+  const seen = new Set();
+  const anchorRe = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+
+  while ((match = anchorRe.exec(html))) {
+    const href = absoluteUrl(baseUrl, match[1]);
+    if (!href || !isSameOrigin(href, source.url)) continue;
+    if (!isLikelyProductUrl(href) && !/\/(products?|item|p)\//i.test(new URL(href).pathname)) continue;
+
+    const title = stripTags(match[2]);
+    if (!title || title.length < 4) continue;
+    if (!/[0-9]/.test(title) && !/(cube|puzzle|timer|skewb|pyraminx|megaminx|square|clock|smart)/i.test(title)) continue;
+
+    const snippet = html.slice(match.index, Math.min(html.length, anchorRe.lastIndex + 500));
+    const price = extractPrice(snippet);
+    if (price == null) continue;
+
+    const key = `${href}::${title}::${price}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const brand = inferBrand(title, source);
+    const shape = inferShape(title);
+
+    offers.push({
+      key: normalizeModelKey(title),
+      name: title,
+      brandKey: brand.key,
+      brandLabel: brand.label,
+      shape,
+      size: shape,
+      category: inferCategory(title),
+      offers: [
+        {
+          storeId: source.id,
+          storeName: source.name,
+          title,
+          price: Number(price),
+          currency: source.currency || "USD",
+          url: href,
+          source: "listing",
+        },
+      ],
+    });
+  }
+
+  return offers;
+}
+
 function extractJsonLdProducts(html) {
   const results = [];
   const scripts = html.match(/<script[^>]+application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) || [];
@@ -504,6 +566,11 @@ async function crawlGeneric(source) {
 
     const product = productFromHtml(html, url, source);
     if (product) mergeProduct(products, product);
+
+    const listingOffers = extractListingOffers(html, url, source);
+    for (const listing of listingOffers) {
+      mergeProduct(products, listing);
+    }
 
     const extractedLinks = extractLinks(html, url)
       .filter((link) => isSameOrigin(link, source.url))
