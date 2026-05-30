@@ -1,5 +1,5 @@
 const USER_AGENT = "CubePrices/1.0";
-const CACHE_KEY = "cube-prices/catalog/v1";
+const CACHE_KEY = "cube-prices/catalog/v2";
 const CATALOG_TTL_SECONDS = 60 * 30;
 const SHOPIFY_PAGES = 10;
 const CRAWL_LIMIT = 140;
@@ -48,8 +48,8 @@ const SOURCES = [
     name: "PicubeShop",
     url: "https://www.picubeshop.com/",
     currency: "USD",
-    kind: "crawl",
-    seeds: ["/", "/collections/3x3", "/collections/moyu", "/collections/qiyi", "/collections/gan"],
+    kind: "shopify",
+    productJsonPaths: ["/products.json?limit=250&page=", "/collections/all/products.json?limit=250&page="],
   },
   {
     id: "gancube",
@@ -157,6 +157,98 @@ function normalizeModelKey(title) {
   return normalized || normalizeText(title);
 }
 
+const FAMILY_STOPWORDS = new Set([
+  "magnetic",
+  "magnet",
+  "maglev",
+  "ball",
+  "core",
+  "ballcore",
+  "uv",
+  "coated",
+  "coating",
+  "frosted",
+  "stickerless",
+  "premium",
+  "standard",
+  "limited",
+  "edition",
+  "new",
+  "special",
+  "anniversary",
+  "christmas",
+  "horse",
+  "newyear",
+  "horseyear",
+  "ai",
+  "smart",
+  "bluetooth",
+  "carry",
+  "tablet",
+  "bundle",
+  "pack",
+  "packaging",
+  "robot",
+  "gift",
+  "giftset",
+  "set",
+  "series",
+  "version",
+  "ver",
+  "v",
+  "m",
+]);
+
+function buildFamilyTokens(product) {
+  const parts = [
+    product.brandLabel || product.brandKey || "",
+    product.name || "",
+  ].join(" ");
+
+  const tokens = normalizeText(parts)
+    .split(" ")
+    .filter((token) => token && !FAMILY_STOPWORDS.has(token));
+
+  return [...new Set(tokens)];
+}
+
+function buildFamilyKey(product) {
+  const brand = product.brandKey || "OTHER";
+  const shape = product.shape || "other";
+  const tokens = buildFamilyTokens(product);
+  return `${brand}|${shape}|${tokens.join(" ")}`;
+}
+
+function areSameFamily(a, b) {
+  const aBrand = a.brandKey || "OTHER";
+  const bBrand = b.brandKey || "OTHER";
+  if (aBrand !== "OTHER" && bBrand !== "OTHER" && aBrand !== bBrand) return false;
+
+  const aShape = a.shape || "other";
+  const bShape = b.shape || "other";
+  if (aShape !== "other" && bShape !== "other" && aShape !== bShape) return false;
+
+  const aKey = a.familyKey || buildFamilyKey(a);
+  const bKey = b.familyKey || buildFamilyKey(b);
+  if (aKey === bKey) return true;
+  if (aKey.includes(bKey) || bKey.includes(aKey)) return true;
+
+  const aTokens = new Set(buildFamilyTokens(a));
+  const bTokens = new Set(buildFamilyTokens(b));
+  let intersection = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) intersection += 1;
+  }
+
+  if (intersection >= 2) {
+    const smaller = Math.min(aTokens.size, bTokens.size) || 1;
+    const ratio = intersection / smaller;
+    return ratio >= 0.6;
+  }
+
+  return false;
+}
+
 const BRAND_ALIASES = [
   { key: "GAN", label: "GAN", patterns: [/\bgan\b/i, /\bgancube\b/i] },
   { key: "QY", label: "QiYi (QY)", patterns: [/\bqiyi\b/i, /\bmofangge\b/i, /\bwarrior\b/i] },
@@ -218,6 +310,25 @@ function extractFirstMatch(html, regex) {
   return match ? match[1] : null;
 }
 
+function parsePriceValue(value) {
+  const text = String(value || "").trim().replace(/\s+/g, "");
+  if (!text) return null;
+
+  if (text.includes(",") && text.includes(".")) {
+    return Number(text.replace(/,/g, ""));
+  }
+
+  if (text.includes(",")) {
+    const parts = text.split(",");
+    if (parts[parts.length - 1].length === 2) {
+      return Number(text.replace(/,/g, "."));
+    }
+    return Number(text.replace(/,/g, ""));
+  }
+
+  return Number(text);
+}
+
 function extractMeta(html, name) {
   const patterns = [
     new RegExp(`<meta[^>]+property=["']${name}["'][^>]+content=["']([^"']+)["']`, "i"),
@@ -258,13 +369,17 @@ function extractPrice(html) {
   const patterns = [
     /property=["']product:price:amount["'][^>]*content=["']([^"']+)["']/i,
     /itemprop=["']price["'][^>]*content=["']([^"']+)["']/i,
-    /"price"\s*:\s*"?(?:\$)?([0-9]+(?:\.[0-9]+)?)"?/i,
-    /Price:\s*(?:discount)?\$?\s*([0-9]+(?:\.[0-9]+)?)/i,
-    /\b\$([0-9]+(?:\.[0-9]+)?)\b/,
+    /"price"\s*:\s*"?(?:\$|€|£|HKD|USD|EUR|GBP|JPY|CNY|RMB)?\s*([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)"?/i,
+    /price[^0-9]{0,20}(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)?\s*([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)/i,
+    /(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)\s*([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)/i,
+    /([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)\s*(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)/i,
   ];
   for (const pattern of patterns) {
     const value = extractFirstMatch(html, pattern);
-    if (value) return Number(value);
+    if (value) {
+      const numeric = parsePriceValue(value);
+      if (!Number.isNaN(numeric)) return numeric;
+    }
   }
   return null;
 }
@@ -289,13 +404,12 @@ function extractListingOffers(html, baseUrl, source) {
   while ((match = anchorRe.exec(html))) {
     const href = absoluteUrl(baseUrl, match[1]);
     if (!href || !isSameOrigin(href, source.url)) continue;
-    if (!isLikelyProductUrl(href) && !/\/(products?|item|p)\//i.test(new URL(href).pathname)) continue;
+    if (!isLikelyProductUrl(href, source) && !isRelevantCatalogUrl(href, source)) continue;
 
     const title = stripTags(match[2]);
-    if (!title || title.length < 4) continue;
-    if (!/[0-9]/.test(title) && !/(cube|puzzle|timer|skewb|pyraminx|megaminx|square|clock|smart)/i.test(title)) continue;
+    if (!title || title.length < 2) continue;
 
-    const snippet = html.slice(match.index, Math.min(html.length, anchorRe.lastIndex + 500));
+    const snippet = html.slice(Math.max(0, match.index - 120), Math.min(html.length, anchorRe.lastIndex + 900));
     const price = extractPrice(snippet);
     if (price == null) continue;
 
@@ -384,13 +498,43 @@ function extractSitemapLocs(xml) {
 
 function isLikelyProductUrl(url) {
   const path = new URL(url).pathname.toLowerCase();
+  const full = url.toLowerCase();
   return (
     path.includes("/products/") ||
     path.includes("/product/") ||
     path.includes("/item/") ||
     path.startsWith("/p/") ||
-    path.startsWith("/products")
+    path.startsWith("/products") ||
+    path.includes("/buy-") ||
+    /\/\d+[-_][^/]+\.html$/.test(path) ||
+    full.includes("_route_=")
   );
+}
+
+function isRelevantCatalogUrl(url, source) {
+  const parsed = new URL(url);
+  const path = parsed.pathname.toLowerCase();
+  const full = `${parsed.pathname}${parsed.search}`.toLowerCase();
+
+  if (isLikelyProductUrl(url, source)) return true;
+
+  if (path.includes("/collections/") || path.includes("/category") || path.includes("/c/")) return true;
+  if (path === "/" || path === "/index.php" || path.endsWith("/index")) return true;
+
+  switch (source.id) {
+    case "ziicube":
+      return full.includes("_route_=") || path.includes("/3x3") || path.includes("/moyu") || path.includes("/gan") || path.includes("/qiyi") || path.includes("/x-man");
+    case "cubezz":
+      return path.includes("/buy-") || path.includes("category.php") || path.includes("/3x3") || path.includes("/puzzle");
+    case "mastercubestore":
+      return path.endsWith(".html") || path.includes("/speedcubes") || path.includes("/cubes") || path.includes("/qiyi") || path.includes("/moyu") || path.includes("/gan");
+    case "cubershk":
+      return path.includes("/products") || path.includes("/item/") || path.includes("/c/");
+    case "picubeshop":
+      return path.includes("/products/") || path.includes("/collections/");
+    default:
+      return false;
+  }
 }
 
 function isSameOrigin(url, root) {
@@ -419,6 +563,7 @@ function productFromHtml(html, url, source) {
 
   return {
     key: normalizeModelKey(title),
+    familyKey: null,
     name: title.trim(),
     brandKey: brand.key,
     brandLabel: brand.label,
@@ -463,6 +608,76 @@ function mergeProduct(map, product) {
     const id = `${offer.storeId}::${offer.url}`;
     if (!offerIndex.has(id)) existing.offers.push(offer);
   }
+}
+
+function mergeProductGroup(existing, product) {
+  if (!existing || !product) return existing;
+
+  if ((existing.name || "").length < (product.name || "").length) {
+    existing.name = product.name;
+  }
+
+  existing.category = existing.category || product.category || "cubes";
+  existing.brandKey = existing.brandKey || product.brandKey || "OTHER";
+  existing.brandLabel = existing.brandLabel || product.brandLabel || "Other";
+  existing.shape = existing.shape || product.shape || "other";
+  existing.size = existing.size || product.size || product.shape || "other";
+  existing.familyKey = existing.familyKey || product.familyKey || buildFamilyKey(existing);
+  existing.tags = [...new Set([...(existing.tags || []), ...(product.tags || [])])];
+
+  const offerIndex = new Set(existing.offers.map((offer) => `${offer.storeId}::${offer.url}`));
+  for (const offer of product.offers || []) {
+    const id = `${offer.storeId}::${offer.url}`;
+    if (!offerIndex.has(id)) existing.offers.push(offer);
+  }
+
+  return existing;
+}
+
+function clusterProductsAcrossStores(productLists) {
+  const groups = [];
+  const buckets = new Map();
+
+  for (const productList of productLists) {
+    for (const raw of productList) {
+      const product = {
+        ...raw,
+        key: normalizeModelKey(raw.name || raw.key || ""),
+        name: (raw.name || raw.key || "").trim(),
+        category: raw.category || "cubes",
+        brandKey: raw.brandKey || "OTHER",
+        brandLabel: raw.brandLabel || "Other",
+        shape: raw.shape || "other",
+        size: raw.size || raw.shape || "other",
+        familyKey: raw.familyKey || buildFamilyKey(raw),
+      };
+      const bucketKey = `${product.brandKey || "OTHER"}|${product.shape || "other"}`;
+      const bucket = buckets.get(bucketKey) || [];
+      let group = null;
+      for (const candidate of bucket) {
+        if (areSameFamily(candidate, product)) {
+          group = candidate;
+          break;
+        }
+      }
+
+      if (!group) {
+        group = {
+          ...product,
+          offers: [...(product.offers || [])],
+          tags: [...new Set(product.tags || [])],
+        };
+        bucket.push(group);
+        buckets.set(bucketKey, bucket);
+        groups.push(group);
+        continue;
+      }
+
+      mergeProductGroup(group, product);
+    }
+  }
+
+  return groups;
 }
 
 async function crawlShopify(source) {
@@ -603,9 +818,8 @@ async function crawlGeneric(source) {
 
 function summarizeCatalog(storeProducts) {
   const stores = new Map();
-  let productCount = 0;
   let offerCount = 0;
-  const products = [];
+  const groupedProducts = clusterProductsAcrossStores(Object.values(storeProducts));
 
   for (const [storeId, productList] of Object.entries(storeProducts)) {
     const store = SOURCES.find((entry) => entry.id === storeId);
@@ -620,25 +834,23 @@ function summarizeCatalog(storeProducts) {
       offerCount: storeOfferCount,
     });
 
-    productCount += productList.length;
     offerCount += storeOfferCount;
-    products.push(...productList);
   }
 
   return {
     generatedAt: new Date().toISOString(),
     stores: [...stores.values()],
-    products,
+    products: groupedProducts,
     filters: {
-      brands: [...new Map(products.map((product) => [product.brandKey || "OTHER", product.brandLabel || "Other"])).entries()].map(
+      brands: [...new Map(groupedProducts.map((product) => [product.brandKey || "OTHER", product.brandLabel || "Other"])).entries()].map(
         ([value, label]) => ({ value, label }),
       ),
-      sizes: [...new Set(products.map((product) => product.size || product.shape || "other"))].sort(),
-      shapes: [...new Set(products.map((product) => product.shape || "other"))].sort(),
-      categories: [...new Set(products.map((product) => product.category || "cubes"))].sort(),
+      sizes: [...new Set(groupedProducts.map((product) => product.size || product.shape || "other"))].sort(),
+      shapes: [...new Set(groupedProducts.map((product) => product.shape || "other"))].sort(),
+      categories: [...new Set(groupedProducts.map((product) => product.category || "cubes"))].sort(),
     },
     stats: {
-      productCount,
+      productCount: groupedProducts.length,
       offerCount,
       storeCount: stores.size,
     },
