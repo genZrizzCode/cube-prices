@@ -51,12 +51,43 @@ const embeddedFallback = {
       productCount: 0,
       offerCount: 0,
     },
+    {
+      id: "gancube",
+      name: "GANCUBE",
+      url: "https://www.gancube.com/",
+      region: "Global",
+      currency: "USD",
+      productCount: 0,
+      offerCount: 0,
+    },
+    {
+      id: "cubezz",
+      name: "Cubezz",
+      url: "https://cubezz.com/",
+      region: "Global",
+      currency: "USD",
+      productCount: 0,
+      offerCount: 0,
+    },
+    {
+      id: "mastercubestore",
+      name: "MasterCubeStore",
+      url: "https://mastercubestore.com/",
+      region: "Europe",
+      currency: "EUR",
+      productCount: 0,
+      offerCount: 0,
+    },
   ],
   products: [
     {
       key: "gan-v100-3x3",
       name: "GAN V100 3x3",
       category: "Featured",
+      brandKey: "GAN",
+      brandLabel: "GAN",
+      shape: "3x3",
+      size: "3x3",
       tags: ["gan", "3x3", "flagship"],
       offers: [
         {
@@ -80,6 +111,14 @@ const embeddedFallback = {
       ],
     },
   ],
+  filters: {
+    brands: [
+      { value: "GAN", label: "GAN" },
+    ],
+    sizes: ["3x3"],
+    shapes: ["3x3"],
+    categories: ["Featured"],
+  },
   stats: {
     productCount: 1,
     offerCount: 2,
@@ -91,11 +130,23 @@ const state = {
   catalog: embeddedFallback,
   loading: true,
   error: null,
+  filters: {
+    search: "",
+    store: "all",
+    brand: "all",
+    size: "all",
+    shape: "all",
+    category: "all",
+  },
 };
 
 const dom = {
   searchInput: document.getElementById("searchInput"),
-  vendorFilter: document.getElementById("vendorFilter"),
+  storeFilter: document.getElementById("storeFilter"),
+  brandFilter: document.getElementById("brandFilter"),
+  sizeFilter: document.getElementById("sizeFilter"),
+  shapeFilter: document.getElementById("shapeFilter"),
+  categoryFilter: document.getElementById("categoryFilter"),
   comparisonGrid: document.getElementById("comparisonGrid"),
   storeGrid: document.getElementById("storeGrid"),
   metrics: document.getElementById("metrics"),
@@ -104,6 +155,74 @@ const dom = {
   rateHkd: document.getElementById("rateHkd"),
   rateGbp: document.getElementById("rateGbp"),
 };
+
+const DEFAULT_SELECT_OPTION = (label = "All") => ({ value: "all", label });
+
+function inferBrandFromTitle(title) {
+  const text = String(title || "").toLowerCase();
+  if (/\bgan\b|\bgancube\b/.test(text)) return { value: "GAN", label: "GAN" };
+  if (/\bqiyi\b|\bmofangge\b|\bwarrior\b/.test(text)) return { value: "QY", label: "QiYi (QY)" };
+  if (/\bx[- ]?man\b|\bxmd\b/.test(text)) return { value: "XMD", label: "X-Man (XMD)" };
+  if (/\bmoyu\b|\bweilong\b|\brs3\b|\bwrm\b/.test(text)) return { value: "MY", label: "MoYu (MY)" };
+  if (/\bdayan\b/.test(text)) return { value: "DY", label: "DaYan (DY)" };
+  if (/\byuxin\b|\byx\b|\blittle magic\b/.test(text)) return { value: "YX", label: "YuXin (YX)" };
+  if (/\byj\b|\byulong\b|\byupo\b/.test(text)) return { value: "YJ", label: "YJ" };
+  if (/\bshengshou\b/.test(text)) return { value: "SS", label: "ShengShou (SS)" };
+  if (/\brubik'?s\b|\brubik\b/.test(text)) return { value: "RUBIKS", label: "Rubik's" };
+  if (/\bmastercubestore\b/.test(text)) return { value: "MSC", label: "MasterCubeStore" };
+  if (/\bcubezz\b/.test(text)) return { value: "CUBEZZ", label: "Cubezz" };
+  if (/\bpicube\b/.test(text)) return { value: "PICUBE", label: "PicubeShop" };
+  return { value: "OTHER", label: "Other" };
+}
+
+function inferShapeFromTitle(title) {
+  const text = String(title || "").toLowerCase();
+  if (/\b2x2\b/.test(text)) return "2x2";
+  if (/\b3x3\b/.test(text)) return "3x3";
+  if (/\b4x4\b/.test(text)) return "4x4";
+  if (/\b5x5\b/.test(text)) return "5x5";
+  if (/\b6x6\b/.test(text)) return "6x6";
+  if (/\b7x7\b/.test(text)) return "7x7";
+  if (/\bskewb\b/.test(text)) return "skewb";
+  if (/\bpyraminx\b/.test(text)) return "pyraminx";
+  if (/\bmegaminx\b/.test(text)) return "megaminx";
+  if (/\bsquare ?-?1\b|\bsq1\b/.test(text)) return "square-1";
+  if (/\bclock\b|\bmagic clock\b/.test(text)) return "clock";
+  if (/\bmirror\b/.test(text)) return "mirror cube";
+  if (/\bcuboid\b|\b3x3x2\b|\b2x2x3\b|\b4x4x5\b/.test(text)) return "cuboid";
+  return "other";
+}
+
+function inferCategoryFromTitle(title) {
+  const text = String(title || "").toLowerCase();
+  if (/\btimer\b|\bstopwatch\b|\bsmart timer\b|\bhalo timer\b/.test(text)) return "timers";
+  if (/\blube\b|\bmat\b|\bbag\b|\bcover\b|\bstickers?\b|\bstand\b|\bkeychain\b|\brobot\b|\bcenter cap\b/.test(text)) {
+    return "accessories";
+  }
+  if (/\blearn\b|\bbeginner\b|\btraining\b|\bstarter\b|\bpractice\b/.test(text)) return "learning";
+  if (/\bcenter\b/.test(text) && /\bcube\b/.test(text)) return "cube centers";
+  if (/\bsmart cube\b|\bi carry\b|\bgo cube\b|\bsmart\b/.test(text)) return "smart cubes";
+  if (/\bmosaic\b|\bspelling\b|\bmystery box\b|\bother\b/.test(text)) return "other puzzles";
+  return "cubes";
+}
+
+function normalizeProduct(product) {
+  const title = product.name || "";
+  const inferredBrand = product.brandKey
+    ? { value: product.brandKey, label: product.brandLabel || product.brandKey }
+    : inferBrandFromTitle(title);
+  const inferredShape = product.shape || inferShapeFromTitle(title);
+  const inferredCategory = product.category || inferCategoryFromTitle(title);
+
+  return {
+    ...product,
+    brandKey: inferredBrand.value,
+    brandLabel: inferredBrand.label,
+    shape: inferredShape,
+    size: product.size || inferredShape,
+    category: inferredCategory,
+  };
+}
 
 function formatMoney(value, currency) {
   try {
@@ -140,18 +259,48 @@ function getBestOffer(offers, rates) {
   }, null);
 }
 
-function renderStoreOptions(stores) {
-  const options = [
-    { value: "all", label: "All stores" },
-    ...stores
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((store) => ({ value: store.id, label: store.name })),
-  ];
-
-  dom.vendorFilter.innerHTML = options
+function renderOptions(select, options, currentValue, fallbackLabel) {
+  const previousValue = currentValue || "all";
+  select.innerHTML = [
+    DEFAULT_SELECT_OPTION(fallbackLabel),
+    ...options,
+  ]
     .map((option) => `<option value="${option.value}">${option.label}</option>`)
     .join("");
+  select.value = options.some((option) => option.value === previousValue) ? previousValue : "all";
+}
+
+function renderFilterOptions(catalog) {
+  const stores = (catalog.stores || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  renderOptions(
+    dom.storeFilter,
+    stores.map((store) => ({ value: store.id, label: store.name })),
+    state.filters.store,
+    "All stores",
+  );
+
+  const filterData = catalog.filters || {};
+  const brandOptions = (filterData.brands || [])
+    .slice()
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)))
+    .map((brand) => ({ value: brand.value, label: brand.label }));
+  const sizeOptions = (filterData.sizes || [])
+    .slice()
+    .sort()
+    .map((size) => ({ value: size, label: size }));
+  const shapeOptions = (filterData.shapes || [])
+    .slice()
+    .sort()
+    .map((shape) => ({ value: shape, label: shape }));
+  const categoryOptions = (filterData.categories || [])
+    .slice()
+    .sort()
+    .map((category) => ({ value: category, label: category }));
+
+  renderOptions(dom.brandFilter, brandOptions, state.filters.brand, "All brands");
+  renderOptions(dom.sizeFilter, sizeOptions, state.filters.size, "All sizes");
+  renderOptions(dom.shapeFilter, shapeOptions, state.filters.shape, "All shapes");
+  renderOptions(dom.categoryFilter, categoryOptions, state.filters.category, "All categories");
 }
 
 function renderStoreGrid(stores) {
@@ -180,32 +329,50 @@ function renderStoreGrid(stores) {
 }
 
 function getFilteredProducts(catalog) {
-  const query = dom.searchInput.value.trim().toLowerCase();
-  const vendorFilter = dom.vendorFilter.value;
+  const query = state.filters.search.trim().toLowerCase();
 
   const filtered = catalog.products.filter((product) => {
+    const normalized = normalizeProduct(product);
     const haystack = [
-      product.name,
-      product.category,
-      ...(product.tags || []),
-      ...(product.offers || []).map((offer) => offer.title),
-      ...(product.offers || []).map((offer) => offer.storeName),
+      normalized.name,
+      normalized.category,
+      normalized.brandLabel,
+      normalized.shape,
+      normalized.size,
+      ...(normalized.tags || []),
+      ...(normalized.offers || []).map((offer) => offer.title),
+      ...(normalized.offers || []).map((offer) => offer.storeName),
     ]
       .join(" ")
       .toLowerCase();
 
     if (query && !haystack.includes(query)) return false;
-    if (vendorFilter !== "all" && !product.offers.some((offer) => offer.storeId === vendorFilter)) {
+    if (state.filters.store !== "all" && !normalized.offers.some((offer) => offer.storeId === state.filters.store)) {
+      return false;
+    }
+    if (state.filters.brand !== "all" && normalized.brandKey !== state.filters.brand) {
+      return false;
+    }
+    if (state.filters.size !== "all" && normalized.size !== state.filters.size) {
+      return false;
+    }
+    if (state.filters.shape !== "all" && normalized.shape !== state.filters.shape) {
+      return false;
+    }
+    if (state.filters.category !== "all" && normalized.category !== state.filters.category) {
       return false;
     }
     return true;
   });
 
   return filtered
-    .map((product) => ({
-      ...product,
-      bestOffer: getBestOffer(product.offers, getRates()),
-    }))
+    .map((product) => {
+      const normalized = normalizeProduct(product);
+      return {
+        ...normalized,
+        bestOffer: getBestOffer(normalized.offers, getRates()),
+      };
+    })
     .sort((a, b) => a.bestOffer.usd - b.bestOffer.usd);
 }
 
@@ -266,8 +433,14 @@ function renderSpotlight(filteredProducts) {
 }
 
 function renderComparison(filteredProducts) {
-  const query = dom.searchInput.value.trim();
-  const hasHardFilter = query.length > 0 || dom.vendorFilter.value !== "all";
+  const query = state.filters.search.trim();
+  const hasHardFilter =
+    query.length > 0 ||
+    state.filters.store !== "all" ||
+    state.filters.brand !== "all" ||
+    state.filters.size !== "all" ||
+    state.filters.shape !== "all" ||
+    state.filters.category !== "all";
   const visible = hasHardFilter ? filteredProducts : filteredProducts.slice(0, FALLBACK_LIMIT);
 
   if (!visible.length) {
@@ -346,7 +519,7 @@ function renderComparison(filteredProducts) {
 
 function renderCatalog(catalog) {
   const filtered = getFilteredProducts(catalog);
-  renderStoreOptions(catalog.stores || []);
+  renderFilterOptions(catalog);
   renderStoreGrid(catalog.stores || []);
   renderMetrics(catalog, filtered);
   renderSpotlight(filtered);
@@ -379,9 +552,32 @@ async function fetchCatalog() {
 }
 
 function attachListeners() {
-  [dom.searchInput, dom.vendorFilter, dom.rateHkd, dom.rateGbp].forEach((element) => {
+  dom.searchInput.addEventListener("input", () => {
+    state.filters.search = dom.searchInput.value;
+    renderCatalog(state.catalog);
+  });
+  dom.storeFilter.addEventListener("change", () => {
+    state.filters.store = dom.storeFilter.value;
+    renderCatalog(state.catalog);
+  });
+  dom.brandFilter.addEventListener("change", () => {
+    state.filters.brand = dom.brandFilter.value;
+    renderCatalog(state.catalog);
+  });
+  dom.sizeFilter.addEventListener("change", () => {
+    state.filters.size = dom.sizeFilter.value;
+    renderCatalog(state.catalog);
+  });
+  dom.shapeFilter.addEventListener("change", () => {
+    state.filters.shape = dom.shapeFilter.value;
+    renderCatalog(state.catalog);
+  });
+  dom.categoryFilter.addEventListener("change", () => {
+    state.filters.category = dom.categoryFilter.value;
+    renderCatalog(state.catalog);
+  });
+  [dom.rateHkd, dom.rateGbp].forEach((element) => {
     element.addEventListener("input", () => renderCatalog(state.catalog));
-    element.addEventListener("change", () => renderCatalog(state.catalog));
   });
 }
 

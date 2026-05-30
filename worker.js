@@ -41,7 +41,7 @@ const SOURCES = [
     url: "https://www.ziicube.com/",
     currency: "USD",
     kind: "crawl",
-    seeds: ["/", "/3x3x3", "/MoYu-Cube", "/GAN-Cube", "/QiYi"],
+    seeds: ["/", "/3x3x3", "/MoYu-Cube", "/GAN-Cube", "/QiYi", "/X-Man", "/Smart-Cube"],
   },
   {
     id: "picubeshop",
@@ -50,6 +50,30 @@ const SOURCES = [
     currency: "USD",
     kind: "crawl",
     seeds: ["/", "/collections/3x3", "/collections/moyu", "/collections/qiyi", "/collections/gan"],
+  },
+  {
+    id: "gancube",
+    name: "GANCUBE",
+    url: "https://www.gancube.com/",
+    currency: "USD",
+    kind: "shopify",
+    productJsonPaths: ["/products.json?limit=250&page=", "/collections/all/products.json?limit=250&page="],
+  },
+  {
+    id: "cubezz",
+    name: "Cubezz",
+    url: "https://cubezz.com/",
+    currency: "USD",
+    kind: "crawl",
+    seeds: ["/", "/3x3x3", "/2x2x2", "/4x4x4", "/puzzles", "/speed-cube", "/cube"],
+  },
+  {
+    id: "mastercubestore",
+    name: "MasterCubeStore",
+    url: "https://mastercubestore.com/",
+    currency: "EUR",
+    kind: "crawl",
+    seeds: ["/83-speedcubes-wca", "/52-3x3-cubes", "/320-mscube", "/sengso", "/other-brands", "/rubik-s", "/yj-moyu"],
   },
   {
     id: "kewbz",
@@ -131,6 +155,62 @@ function normalizeModelKey(title) {
     .trim();
 
   return normalized || normalizeText(title);
+}
+
+const BRAND_ALIASES = [
+  { key: "GAN", label: "GAN", patterns: [/\bgan\b/i, /\bgancube\b/i] },
+  { key: "QY", label: "QiYi (QY)", patterns: [/\bqiyi\b/i, /\bmofangge\b/i, /\bwarrior\b/i] },
+  { key: "XMD", label: "X-Man (XMD)", patterns: [/\bx[- ]?man\b/i, /\bxmd\b/i] },
+  { key: "MY", label: "MoYu (MY)", patterns: [/\bmoyu\b/i, /\bweilong\b/i, /\brs3\b/i, /\bwrm\b/i, /\bsuper weilong\b/i] },
+  { key: "DY", label: "DaYan (DY)", patterns: [/\bdayan\b/i] },
+  { key: "YX", label: "YuXin (YX)", patterns: [/\byuxin\b/i, /\byx\b/i, /\blittle magic\b/i] },
+  { key: "YJ", label: "YJ", patterns: [/\byj\b/i, /\byulong\b/i, /\byupo\b/i] },
+  { key: "SS", label: "ShengShou (SS)", patterns: [/\bshengshou\b/i] },
+  { key: "RUBIKS", label: "Rubik's", patterns: [/\brubik'?s\b/i, /\brubik\b/i] },
+  { key: "MSC", label: "MasterCubeStore", patterns: [/\bmastercubestore\b/i] },
+  { key: "CUBEZZ", label: "Cubezz", patterns: [/\bcubezz\b/i] },
+  { key: "PICUBE", label: "PicubeShop", patterns: [/\bpicube\b/i] },
+];
+
+function inferBrand(title, source) {
+  const haystack = `${title} ${source?.name || ""}`;
+  for (const brand of BRAND_ALIASES) {
+    if (brand.patterns.some((pattern) => pattern.test(haystack))) {
+      return { key: brand.key, label: brand.label };
+    }
+  }
+  return { key: "OTHER", label: "Other" };
+}
+
+function inferShape(title) {
+  const text = normalizeText(title);
+  if (/\b2x2\b/.test(text)) return "2x2";
+  if (/\b3x3\b/.test(text)) return "3x3";
+  if (/\b4x4\b/.test(text)) return "4x4";
+  if (/\b5x5\b/.test(text)) return "5x5";
+  if (/\b6x6\b/.test(text)) return "6x6";
+  if (/\b7x7\b/.test(text)) return "7x7";
+  if (/\bskewb\b/.test(text)) return "skewb";
+  if (/\bpyraminx\b/.test(text)) return "pyraminx";
+  if (/\bmegaminx\b/.test(text)) return "megaminx";
+  if (/\bsquare ?-?1\b|\bsq1\b/.test(text)) return "square-1";
+  if (/\bclock\b|\bmagic clock\b/.test(text)) return "clock";
+  if (/\bmirror\b/.test(text)) return "mirror cube";
+  if (/\bcuboid\b|\b3x3x2\b|\b2x2x3\b|\b4x4x5\b/.test(text)) return "cuboid";
+  return "other";
+}
+
+function inferCategory(title) {
+  const text = normalizeText(title);
+  if (/\btimer\b|\bstopwatch\b|\bsmart timer\b|\bhalo timer\b/.test(text)) return "timers";
+  if (/\blube\b|\bmat\b|\bbag\b|\bcover\b|\bstickers?\b|\bstand\b|\bkeychain\b|\brobot\b|\bcenter cap\b/.test(text)) {
+    return "accessories";
+  }
+  if (/\blearn\b|\bbeginner\b|\btraining\b|\bstarter\b|\bpractice\b/.test(text)) return "learning";
+  if (/\bcenter\b/.test(text) && /\bcube\b/.test(text)) return "cube centers";
+  if (/\bsmart cube\b|\bi carry\b|\bgo cube\b|\bsmart\b/.test(text)) return "smart cubes";
+  if (/\bmosaic\b|\bspelling\b|\bmystery box\b|\bother\b/.test(text)) return "other puzzles";
+  return "cubes";
 }
 
 function extractFirstMatch(html, regex) {
@@ -263,6 +343,8 @@ function productFromHtml(html, url, source) {
 
   const canonical = extractCanonical(html) || url;
   const currency = jsonLd.currency || extractCurrency(html, source.currency || "USD");
+  const brand = inferBrand(title, source);
+  const shape = inferShape(title);
   const offer = {
     storeId: source.id,
     storeName: source.name,
@@ -276,8 +358,12 @@ function productFromHtml(html, url, source) {
   return {
     key: normalizeModelKey(title),
     name: title.trim(),
-    category: source.name,
-    tags: [],
+    brandKey: brand.key,
+    brandLabel: brand.label,
+    shape,
+    size: shape,
+    category: inferCategory(title),
+    tags: [brand.label],
     offers: [offer],
   };
 }
@@ -289,7 +375,11 @@ function mergeProduct(map, product) {
     map.set(product.key, {
       key: product.key,
       name: product.name,
-      category: product.category || "Puzzle",
+      category: product.category || "cubes",
+      brandKey: product.brandKey || "OTHER",
+      brandLabel: product.brandLabel || "Other",
+      shape: product.shape || "other",
+      size: product.size || product.shape || "other",
       tags: product.tags || [],
       offers: [...product.offers],
     });
@@ -299,6 +389,12 @@ function mergeProduct(map, product) {
   if ((existing.name || "").length > (product.name || "").length) {
     existing.name = product.name;
   }
+
+  existing.category = existing.category || product.category || "cubes";
+  existing.brandKey = existing.brandKey || product.brandKey || "OTHER";
+  existing.brandLabel = existing.brandLabel || product.brandLabel || "Other";
+  existing.shape = existing.shape || product.shape || "other";
+  existing.size = existing.size || product.size || product.shape || "other";
 
   const offerIndex = new Set(existing.offers.map((offer) => `${offer.storeId}::${offer.url}`));
   for (const offer of product.offers) {
@@ -327,7 +423,11 @@ async function crawlShopify(source) {
         const product = {
           key: normalizeModelKey(item.title),
           name: item.title.trim(),
-          category: item.product_type || source.name,
+          category: inferCategory(item.title) || item.product_type || "cubes",
+          brandKey: inferBrand(item.title, source).key,
+          brandLabel: inferBrand(item.title, source).label,
+          shape: inferShape(item.title),
+          size: inferShape(item.title),
           tags: Array.isArray(item.tags)
             ? item.tags
             : typeof item.tags === "string"
@@ -462,6 +562,14 @@ function summarizeCatalog(storeProducts) {
     generatedAt: new Date().toISOString(),
     stores: [...stores.values()],
     products,
+    filters: {
+      brands: [...new Map(products.map((product) => [product.brandKey || "OTHER", product.brandLabel || "Other"])).entries()].map(
+        ([value, label]) => ({ value, label }),
+      ),
+      sizes: [...new Set(products.map((product) => product.size || product.shape || "other"))].sort(),
+      shapes: [...new Set(products.map((product) => product.shape || "other"))].sort(),
+      categories: [...new Set(products.map((product) => product.category || "cubes"))].sort(),
+    },
     stats: {
       productCount,
       offerCount,
