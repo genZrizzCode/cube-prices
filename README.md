@@ -1,6 +1,6 @@
-# Cube Price Compass
+# Cube Prices
 
-Cube Price Compass is a simple static website for comparing speed cube prices across major stores.
+Cube Prices is a simple static website for comparing speed cube prices across major stores.
 
 ## What it does
 
