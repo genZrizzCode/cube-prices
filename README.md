@@ -11,16 +11,16 @@ Cube Price Compass is a simple static website for comparing speed cube prices ac
 
 ## Files
 
-- `index.html` - page structure
-- `styles.css` - visual design and responsive layout
-- `main.js` - frontend rendering and catalog filtering
+- `public/index.html` - page structure
+- `public/styles.css` - visual design and responsive layout
+- `public/main.js` - frontend rendering and catalog filtering
 - `worker.js` - Cloudflare Worker that scrapes public catalogs and serves `/api/catalog`
 - `wrangler.toml` - Cloudflare deployment config
 - `LICENSE` - MIT license
 
 ## Run locally
 
-For local static preview, open `index.html` directly in a browser.
+For local static preview, open `public/index.html` directly in a browser.
 
 Example:
 

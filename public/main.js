@@ -130,18 +130,6 @@ function toUsd(price, currency, rates) {
   return Number(price) * rate;
 }
 
-function normalizeText(value) {
-  return String(value || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(uc|uv|maglev|magnetic|ball[- ]core|core magnets?|frosted|stickerless|robot box|smart cube|bluetooth|limited edition|special edition|new year edition|year of the horse|standard|premium|flagship|matte|glossy|black internals?)\b/g, " ")
-    .replace(/3x3x3/g, "3x3")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function getBestOffer(offers, rates) {
   return offers.reduce((best, offer) => {
     const usd = toUsd(offer.price, offer.currency, rates);
@@ -261,8 +249,6 @@ function renderMetrics(catalog, filteredProducts) {
       `,
     )
     .join("");
-
-  return storeCount;
 }
 
 function renderSpotlight(filteredProducts) {
