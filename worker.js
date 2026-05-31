@@ -1,5 +1,5 @@
 const USER_AGENT = "CubePrices/1.0";
-const CACHE_KEY = "cube-prices/catalog/v2";
+const CACHE_KEY = "cube-prices/catalog/v3";
 const CATALOG_TTL_SECONDS = 60 * 30;
 const SHOPIFY_PAGES = 10;
 const CRAWL_LIMIT = 140;
@@ -305,6 +305,91 @@ function inferCategory(title) {
   return "cubes";
 }
 
+function shouldSkipTitle(title) {
+  const raw = String(title || "").trim();
+  const text = normalizeText(title);
+  return (
+    !text ||
+    /\bnot for sale\b/.test(text) ||
+    /^7[- ]?11\b/i.test(raw) ||
+    /\b7[- ]?11\b/.test(text) ||
+    /\bseven eleven\b/.test(text) ||
+    /\(for display only,\s*not for sale\)/i.test(raw) ||
+    /\bfor display only\b.*\bnot for sale\b/i.test(raw) ||
+    /\bblank center piece\b/.test(text)
+  );
+}
+
+function isNoiseListingLine(text) {
+  const normalized = normalizeText(text);
+  return (
+    !normalized ||
+    normalized === "image" ||
+    normalized === "sale" ||
+    normalized === "latest" ||
+    normalized === "rating" ||
+    normalized === "sales" ||
+    normalized === "price" ||
+    normalized === "sort by" ||
+    /^a total of \d+/.test(normalized) ||
+    /^\d+$/.test(normalized)
+  );
+}
+
+function looksLikeProductTitle(title) {
+  const raw = String(title || "");
+  const normalized = normalizeText(raw);
+  return (
+    !!normalized &&
+    (
+      /[0-9]/.test(normalized) ||
+      /\bcube\b/.test(normalized) ||
+      /\bpuzzle\b/.test(normalized) ||
+      /\bskewb\b/.test(normalized) ||
+      /\bpyraminx\b/.test(normalized) ||
+      /\bmegaminx\b/.test(normalized) ||
+      /\bsquare\b/.test(normalized) ||
+      /\bclock\b/.test(normalized) ||
+      /\bmirror\b/.test(normalized) ||
+      /\bmagic\b/.test(normalized) ||
+      /\bgan\b/.test(normalized) ||
+      /\bmoyu\b/.test(normalized) ||
+      /\bqiyi\b/.test(normalized) ||
+      /\bxmd\b/.test(normalized) ||
+      /\bdayan\b/.test(normalized) ||
+      /\byuxin\b/.test(normalized) ||
+      /\byj\b/.test(normalized) ||
+      /\brubik\b/.test(normalized) ||
+      /[\u4e00-\u9fff]/.test(raw)
+    )
+  );
+}
+
+function htmlToLines(html) {
+  return String(html || "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|li|tr|h[1-6]|section|article|table|ul|ol|main|header|footer)>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function extractPriceCandidates(text) {
+  const matches = [];
+  const pattern = /(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)\s*([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)|([0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?)\s*(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)/gi;
+  let match;
+  while ((match = pattern.exec(text))) {
+    const value = parsePriceValue(match[1] || match[2]);
+    if (value != null && !Number.isNaN(value)) matches.push(value);
+  }
+  return matches;
+}
+
 function extractFirstMatch(html, regex) {
   const match = html.match(regex);
   return match ? match[1] : null;
@@ -407,11 +492,11 @@ function extractListingOffers(html, baseUrl, source) {
     if (!isLikelyProductUrl(href, source) && !isRelevantCatalogUrl(href, source)) continue;
 
     const title = stripTags(match[2]);
-    if (!title || title.length < 2) continue;
+    if (shouldSkipTitle(title) || title.length < 2 || !looksLikeProductTitle(title)) continue;
 
     const snippet = html.slice(Math.max(0, match.index - 120), Math.min(html.length, anchorRe.lastIndex + 900));
     const price = extractPrice(snippet);
-    if (price == null) continue;
+    if (price == null || price <= 0) continue;
 
     const key = `${href}::${title}::${price}`;
     if (seen.has(key)) continue;
@@ -440,6 +525,112 @@ function extractListingOffers(html, baseUrl, source) {
         },
       ],
     });
+  }
+
+  return offers;
+}
+
+function extractTextListingOffers(html, baseUrl, source) {
+  const offers = [];
+  const seen = new Set();
+  const lines = htmlToLines(html);
+  let pendingTitle = null;
+  let pendingPrice = null;
+
+  for (const line of lines) {
+    if (isNoiseListingLine(line)) continue;
+
+    const prices = extractPriceCandidates(line);
+    if (prices.length) {
+      const price = prices[0];
+      if (price <= 0) {
+        pendingPrice = null;
+        continue;
+      }
+
+      const titleFromLine = stripTags(
+        line.replace(/(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)\s*[0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?/gi, " ")
+          .replace(/[0-9]+(?:[.,][0-9]{1,3})*(?:[.,][0-9]{1,2})?\s*(?:HKD|USD|EUR|GBP|JPY|CNY|RMB|€|£|\$)/gi, " "),
+      );
+      if (titleFromLine && !isNoiseListingLine(titleFromLine) && !shouldSkipTitle(titleFromLine) && looksLikeProductTitle(titleFromLine)) {
+        const href = absoluteUrl(baseUrl, baseUrl);
+        const title = titleFromLine;
+        const brand = inferBrand(title, source);
+        const shape = inferShape(title);
+        const key = `${source.id}::${title}::${price}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          offers.push({
+            key: normalizeModelKey(title),
+            name: title,
+            brandKey: brand.key,
+            brandLabel: brand.label,
+            shape,
+            size: shape,
+            category: inferCategory(title),
+            offers: [
+              {
+                storeId: source.id,
+                storeName: source.name,
+                title,
+                price,
+                currency: source.currency || "USD",
+                url: href,
+                source: "listing",
+              },
+            ],
+          });
+        }
+        pendingTitle = null;
+        pendingPrice = null;
+        continue;
+      }
+
+      pendingPrice = price;
+      continue;
+    }
+
+    if (!pendingPrice) {
+      pendingTitle = line;
+      continue;
+    }
+
+    const title = pendingTitle || line;
+    if (!title || shouldSkipTitle(title) || isNoiseListingLine(title) || !looksLikeProductTitle(title)) {
+      pendingTitle = null;
+      pendingPrice = null;
+      continue;
+    }
+
+    const href = absoluteUrl(baseUrl, baseUrl);
+    const brand = inferBrand(title, source);
+    const shape = inferShape(title);
+    const key = `${source.id}::${title}::${pendingPrice}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      offers.push({
+        key: normalizeModelKey(title),
+        name: title,
+        brandKey: brand.key,
+        brandLabel: brand.label,
+        shape,
+        size: shape,
+        category: inferCategory(title),
+        offers: [
+          {
+            storeId: source.id,
+            storeName: source.name,
+            title,
+            price: pendingPrice,
+            currency: source.currency || "USD",
+            url: href,
+            source: "listing",
+          },
+        ],
+      });
+    }
+    pendingTitle = null;
+    pendingPrice = null;
   }
 
   return offers;
@@ -545,7 +736,7 @@ function productFromHtml(html, url, source) {
   const jsonLd = extractJsonLdProducts(html)[0] || {};
   const title = jsonLd.title || extractTitle(html);
   const price = jsonLd.price || extractPrice(html);
-  if (!title || price == null || Number.isNaN(Number(price))) return null;
+  if (!title || shouldSkipTitle(title) || price == null || Number.isNaN(Number(price)) || Number(price) <= 0) return null;
 
   const canonical = extractCanonical(html) || url;
   const currency = jsonLd.currency || extractCurrency(html, source.currency || "USD");
@@ -695,7 +886,7 @@ async function crawlShopify(source) {
         const variants = Array.isArray(item.variants) ? item.variants : [];
         const chosenVariant = variants.find((variant) => variant.available) || variants[0] || {};
         const price = Number(chosenVariant.price ?? item.price);
-        if (!item.title || Number.isNaN(price)) continue;
+        if (!item.title || shouldSkipTitle(item.title) || Number.isNaN(price) || price <= 0) continue;
 
         const product = {
           key: normalizeModelKey(item.title),
@@ -782,7 +973,8 @@ async function crawlGeneric(source) {
     const product = productFromHtml(html, url, source);
     if (product) mergeProduct(products, product);
 
-    const listingOffers = extractListingOffers(html, url, source);
+    const textListingOffers = extractTextListingOffers(html, url, source);
+    const listingOffers = textListingOffers.length ? textListingOffers : extractListingOffers(html, url, source);
     for (const listing of listingOffers) {
       mergeProduct(products, listing);
     }
