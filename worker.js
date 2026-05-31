@@ -1071,6 +1071,33 @@ async function buildCatalog() {
   return summarizeCatalog(storeProducts);
 }
 
+function fallbackCatalog() {
+  return {
+    generatedAt: new Date().toISOString(),
+    stores: SOURCES.map((source) => ({
+      id: source.id,
+      name: source.name,
+      url: source.url,
+      region: source.kind === "shopify" ? "Catalog source" : "Catalog source",
+      currency: source.currency || "USD",
+      productCount: 0,
+      offerCount: 0,
+    })),
+    products: [],
+    filters: {
+      brands: [],
+      sizes: [],
+      shapes: [],
+      categories: [],
+    },
+    stats: {
+      productCount: 0,
+      offerCount: 0,
+      storeCount: SOURCES.length,
+    },
+  };
+}
+
 async function handleCatalog(request, env, ctx) {
   const url = new URL(request.url);
   const refresh = url.searchParams.get("refresh") === "1";
@@ -1082,16 +1109,31 @@ async function handleCatalog(request, env, ctx) {
     if (cached) return cached;
   }
 
-  const catalog = await buildCatalog();
-  const response = new Response(JSON.stringify(catalog), {
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
-    },
-  });
+  try {
+    const catalog = await buildCatalog();
+    const response = new Response(JSON.stringify(catalog), {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
+      },
+    });
 
-  ctx.waitUntil(cache.put(cacheRequest, response.clone()));
-  return response;
+    ctx.waitUntil(cache.put(cacheRequest, response.clone()));
+    return response;
+  } catch (error) {
+    console.error("Catalog build failed", error);
+    const cached = await cache.match(cacheRequest);
+    if (cached) return cached;
+
+    const response = new Response(JSON.stringify(fallbackCatalog()), {
+      status: 200,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "public, max-age=60",
+      },
+    });
+    return response;
+  }
 }
 
 async function handleAsset(request, env) {
