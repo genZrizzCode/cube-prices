@@ -48,8 +48,8 @@ const SOURCES = [
     name: "PicubeShop",
     url: "https://www.picubeshop.com/",
     currency: "USD",
-    kind: "shopify",
-    productJsonPaths: ["/products.json?limit=250&page=", "/collections/all/products.json?limit=250&page="],
+    kind: "crawl",
+    seeds: ["/", "/collections/all", "/collections/new-arrival", "/collections/new-arrivals", "/collections/3x3", "/collections/moyu", "/collections/qiyi", "/collections/gan"],
   },
   {
     id: "gancube",
@@ -62,10 +62,10 @@ const SOURCES = [
   {
     id: "cubezz",
     name: "Cubezz",
-    url: "https://cubezz.com/",
+    url: "https://www.cubezz.com/",
     currency: "USD",
     kind: "crawl",
-    seeds: ["/", "/3x3x3", "/2x2x2", "/4x4x4", "/puzzles", "/speed-cube", "/cube"],
+    seeds: ["/", "/category.php?brand=0&category=330&display=grid&filter_attr=0&order=DESC&page=1&price_max=0&price_min=0&sort=goods_id", "/category.php?brand=0&category=350&display=grid&filter_attr=0&order=DESC&page=1&price_max=0&price_min=0&sort=goods_id", "/category.php?brand=0&category=360&display=grid&filter_attr=0&order=DESC&page=1&price_max=0&price_min=0&sort=goods_id", "/category.php?brand=0&category=337&display=grid&filter_attr=0&order=DESC&page=1&price_max=0&price_min=0&sort=goods_id"],
   },
   {
     id: "mastercubestore",
@@ -1106,6 +1106,25 @@ async function handleCatalog(request, env, ctx) {
 
   if (!refresh) {
     const cached = await cache.match(cacheRequest);
+    if (cached) return cached;
+  }
+
+  if (refresh) {
+    const cached = await cache.match(cacheRequest);
+    ctx.waitUntil((async () => {
+      try {
+        const catalog = await buildCatalog();
+        const response = new Response(JSON.stringify(catalog), {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
+          },
+        });
+        await cache.put(cacheRequest, response);
+      } catch (error) {
+        console.error("Catalog refresh failed", error);
+      }
+    })());
     if (cached) return cached;
   }
 
