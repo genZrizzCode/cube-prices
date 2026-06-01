@@ -261,6 +261,14 @@ function getBestOffer(offers, rates) {
   }, null);
 }
 
+function hasLiveProducts(catalog) {
+  return Boolean(catalog && Array.isArray(catalog.products) && catalog.products.length > 0);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function renderOptions(select, options, currentValue, fallbackLabel) {
   const previousValue = currentValue || "all";
   select.innerHTML = [
@@ -572,7 +580,26 @@ async function fetchCatalog(forceRefresh = false) {
     if (!response.ok) {
       throw new Error(`Catalog API returned ${response.status}`);
     }
-    state.catalog = await response.json();
+    const refreshedCatalog = await response.json();
+    if (!forceRefresh || hasLiveProducts(refreshedCatalog)) {
+      state.catalog = refreshedCatalog;
+    }
+
+    if (forceRefresh && !hasLiveProducts(refreshedCatalog)) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await sleep(2000);
+        const followUp = await fetch(API_URL, {
+          headers: { accept: "application/json" },
+        });
+        if (!followUp.ok) continue;
+        const followUpCatalog = await followUp.json();
+        if (hasLiveProducts(followUpCatalog)) {
+          state.catalog = followUpCatalog;
+          state.error = null;
+          break;
+        }
+      }
+    }
   } catch (error) {
     state.error = error;
   } finally {
