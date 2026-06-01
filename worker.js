@@ -1,5 +1,5 @@
 const USER_AGENT = "CubePrices/1.0";
-const CACHE_KEY = "cube-prices/catalog/v3";
+const CACHE_KEY = "cube-prices/catalog/v4";
 const CATALOG_TTL_SECONDS = 60 * 30;
 const SHOPIFY_PAGES = 10;
 const CRAWL_LIMIT = 140;
@@ -1071,6 +1071,21 @@ async function buildCatalog() {
   return summarizeCatalog(storeProducts);
 }
 
+async function refreshCatalogCache(cache, cacheRequest) {
+  try {
+    const catalog = await buildCatalog();
+    const response = new Response(JSON.stringify(catalog), {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
+      },
+    });
+    await cache.put(cacheRequest, response.clone());
+  } catch (error) {
+    console.error("Catalog refresh failed", error);
+  }
+}
+
 function fallbackCatalog() {
   return {
     generatedAt: new Date().toISOString(),
@@ -1104,55 +1119,20 @@ async function handleCatalog(request, env, ctx) {
   const cache = caches.default;
   const cacheRequest = new Request(`${url.origin}/api/catalog?${CACHE_KEY}`, { method: "GET" });
 
-  if (!refresh) {
-    const cached = await cache.match(cacheRequest);
-    if (cached) return cached;
+  const cached = await cache.match(cacheRequest);
+  if (cached) {
+    if (refresh) ctx.waitUntil(refreshCatalogCache(cache, cacheRequest));
+    return cached;
   }
 
-  if (refresh) {
-    const cached = await cache.match(cacheRequest);
-    ctx.waitUntil((async () => {
-      try {
-        const catalog = await buildCatalog();
-        const response = new Response(JSON.stringify(catalog), {
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
-          },
-        });
-        await cache.put(cacheRequest, response);
-      } catch (error) {
-        console.error("Catalog refresh failed", error);
-      }
-    })());
-    if (cached) return cached;
-  }
-
-  try {
-    const catalog = await buildCatalog();
-    const response = new Response(JSON.stringify(catalog), {
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": `public, max-age=${CATALOG_TTL_SECONDS}`,
-      },
-    });
-
-    ctx.waitUntil(cache.put(cacheRequest, response.clone()));
-    return response;
-  } catch (error) {
-    console.error("Catalog build failed", error);
-    const cached = await cache.match(cacheRequest);
-    if (cached) return cached;
-
-    const response = new Response(JSON.stringify(fallbackCatalog()), {
-      status: 200,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "public, max-age=60",
-      },
-    });
-    return response;
-  }
+  if (ctx) ctx.waitUntil(refreshCatalogCache(cache, cacheRequest));
+  return new Response(JSON.stringify(fallbackCatalog()), {
+    status: 200,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=60",
+    },
+  });
 }
 
 async function handleAsset(request, env) {

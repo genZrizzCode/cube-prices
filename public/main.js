@@ -130,6 +130,7 @@ const state = {
   catalog: embeddedFallback,
   loading: true,
   error: null,
+  refreshing: false,
   filters: {
     search: "",
     store: "all",
@@ -558,6 +559,8 @@ function renderCatalog(catalog) {
 }
 
 async function fetchCatalog(forceRefresh = false) {
+  if (forceRefresh && state.refreshing) return;
+  if (forceRefresh) state.refreshing = true;
   state.loading = true;
   state.error = null;
   renderCatalog(state.catalog);
@@ -574,6 +577,7 @@ async function fetchCatalog(forceRefresh = false) {
     state.error = error;
   } finally {
     state.loading = false;
+    state.refreshing = false;
     if (dom.refreshButton) {
       dom.refreshButton.disabled = false;
       dom.refreshButton.textContent = "Refresh prices";
@@ -615,6 +619,7 @@ function attachListeners() {
     element.addEventListener("input", () => renderCatalog(state.catalog));
   });
   dom.refreshButton.addEventListener("click", async () => {
+    if (state.refreshing) return;
     dom.refreshButton.disabled = true;
     dom.refreshButton.textContent = "Refreshing...";
     await fetchCatalog(true);
