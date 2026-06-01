@@ -581,7 +581,10 @@ async function fetchCatalog(forceRefresh = false) {
       throw new Error(`Catalog API returned ${response.status}`);
     }
     const refreshedCatalog = await response.json();
-    if (!forceRefresh || hasLiveProducts(refreshedCatalog)) {
+    if (hasLiveProducts(refreshedCatalog)) {
+      state.catalog = refreshedCatalog;
+      state.error = null;
+    } else if (!hasLiveProducts(state.catalog)) {
       state.catalog = refreshedCatalog;
     }
 

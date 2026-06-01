@@ -1,5 +1,5 @@
 const USER_AGENT = "CubePrices/1.0";
-const CACHE_KEY = "cube-prices/catalog/v4";
+const CACHE_KEY = "cube-prices/catalog/v5";
 const CATALOG_TTL_SECONDS = 60 * 30;
 const SHOPIFY_PAGES = 10;
 const CRAWL_LIMIT = 140;
@@ -1074,6 +1074,10 @@ async function buildCatalog() {
 async function refreshCatalogCache(cache, cacheRequest) {
   try {
     const catalog = await buildCatalog();
+    if ((catalog.stats?.productCount || 0) <= 0) {
+      console.warn("Skipping cache write for empty catalog build");
+      return;
+    }
     const response = new Response(JSON.stringify(catalog), {
       headers: {
         "content-type": "application/json; charset=utf-8",
